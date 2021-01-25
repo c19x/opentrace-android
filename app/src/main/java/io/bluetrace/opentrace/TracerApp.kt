@@ -3,6 +3,7 @@ package io.bluetrace.opentrace
 import android.app.Application
 import android.content.Context
 import android.os.Build
+import com.vmware.herald.sensor.FairEfficacyInstrumentation
 import io.bluetrace.opentrace.idmanager.TempIDManager
 import io.bluetrace.opentrace.logging.CentralLog
 import io.bluetrace.opentrace.services.BluetoothMonitoringService
@@ -14,6 +15,10 @@ class TracerApp : Application() {
     override fun onCreate() {
         super.onCreate()
         AppContext = applicationContext
+        fairEfficacyInstrumentation =
+            FairEfficacyInstrumentation(
+                applicationContext
+            )
     }
 
     companion object {
@@ -22,6 +27,7 @@ class TracerApp : Application() {
         const val ORG = BuildConfig.ORG
 
         lateinit var AppContext: Context
+        lateinit var fairEfficacyInstrumentation: FairEfficacyInstrumentation
 
         fun thisDeviceMsg(): String {
             BluetoothMonitoringService.broadcastMessage?.let {

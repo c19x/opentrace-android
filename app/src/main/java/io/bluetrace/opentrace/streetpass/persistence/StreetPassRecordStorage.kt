@@ -1,6 +1,7 @@
 package io.bluetrace.opentrace.streetpass.persistence
 
 import android.content.Context
+import io.bluetrace.opentrace.TracerApp
 
 class StreetPassRecordStorage(val context: Context) {
 
@@ -8,6 +9,7 @@ class StreetPassRecordStorage(val context: Context) {
 
     suspend fun saveRecord(record: StreetPassRecord) {
         recordDao.insert(record)
+        TracerApp.fairEfficacyInstrumentation.instrument(record.timestamp, record.msg, record.rssi)
     }
 
     fun nukeDb() {

@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import androidx.appcompat.app.AppCompatActivity
+import com.vmware.herald.sensor.FairEfficacyInstrumentation
 import io.bluetrace.opentrace.onboarding.PreOnboardingActivity
 
 class SplashActivity : AppCompatActivity() {
@@ -50,6 +51,19 @@ class SplashActivity : AppCompatActivity() {
                 finish()
             }, SPLASH_TIME)
         }
+        /// Test mode : Splash -> RequestPermission -> MainActivity
+        FairEfficacyInstrumentation.requestPermissions(this)
+    }
+
+    /// Test mode : Splash -> RequestPermission -> MainActivity
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        FairEfficacyInstrumentation.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        startActivity(Intent(this, MainActivity::class.java))
     }
 
     private fun goToNextScreen() {
