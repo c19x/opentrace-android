@@ -6,9 +6,8 @@ import com.google.firebase.functions.FirebaseFunctions
 import com.google.firebase.functions.HttpsCallableResult
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
-import com.vmware.herald.sensor.FairEfficacyInstrumentation
 import io.bluetrace.opentrace.Preference
-import io.bluetrace.opentrace.TracerApp
+import io.bluetrace.opentrace.herald.HeraldIntegration
 import io.bluetrace.opentrace.logging.CentralLog
 import io.bluetrace.opentrace.services.BluetoothMonitoringService.Companion.bmValidityCheck
 import java.io.File
@@ -25,12 +24,8 @@ object TempIDManager {
     }
 
     fun retrieveTemporaryID(context: Context): TemporaryID? {
-        if (FairEfficacyInstrumentation.testMode) {
-            return TemporaryID(
-                0,
-                TracerApp.fairEfficacyInstrumentation.payloadData.base64EncodedString(),
-                Long.MAX_VALUE
-            )
+        if (HeraldIntegration.testMode) {
+            return HeraldIntegration.tempIDManager_retrieveTemporaryID();
         }
         val file = File(context.filesDir, "tempIDs")
         if (file.exists()) {
@@ -50,7 +45,7 @@ object TempIDManager {
             )
         }
         return null
-}
+    }
 
     private fun getValidOrLastTemporaryID(
         context: Context,
@@ -122,7 +117,9 @@ object TempIDManager {
     }
 
     fun getTemporaryIDs(context: Context, functions: FirebaseFunctions): Task<HttpsCallableResult> {
-        return FairEfficacyInstrumentation.EmulatedTask()
+        if (HeraldIntegration.testMode) {
+            return HeraldIntegration.tempIDManager_getTemporaryIDs()
+        }
         return functions.getHttpsCallable("getTempIDs").call().addOnSuccessListener {
             val result: HashMap<String, Any> = it.data as HashMap<String, Any>
             val tempIDs = result["tempIDs"]

@@ -9,7 +9,6 @@ class StreetPassRecordStorage(val context: Context) {
 
     suspend fun saveRecord(record: StreetPassRecord) {
         recordDao.insert(record)
-        TracerApp.fairEfficacyInstrumentation.instrument(record.timestamp, record.msg, record.rssi)
     }
 
     fun nukeDb() {

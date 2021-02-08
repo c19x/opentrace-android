@@ -1,8 +1,9 @@
-package com.vmware.herald.sensor;
+package io.bluetrace.opentrace.herald;
 
 import android.Manifest;
 import android.app.Activity;
 import android.content.Context;
+import android.content.Intent;
 import android.os.Build;
 
 import androidx.annotation.NonNull;
@@ -14,62 +15,86 @@ import com.google.android.gms.tasks.OnFailureListener;
 import com.google.android.gms.tasks.OnSuccessListener;
 import com.google.android.gms.tasks.Task;
 import com.google.firebase.functions.HttpsCallableResult;
-import com.vmware.herald.sensor.SensorDelegate;
-import com.vmware.herald.sensor.data.BatteryLog;
+import com.vmware.herald.sensor.DefaultSensorDelegate;
+import com.vmware.herald.sensor.SensorArray;
+import com.vmware.herald.sensor.ble.BLESensorConfiguration;
 import com.vmware.herald.sensor.data.ConcreteSensorLogger;
-import com.vmware.herald.sensor.data.ContactLog;
-import com.vmware.herald.sensor.data.DetectionLog;
 import com.vmware.herald.sensor.data.SensorLogger;
-import com.vmware.herald.sensor.data.SensorLoggerLevel;
-import com.vmware.herald.sensor.datatype.Data;
-import com.vmware.herald.sensor.datatype.PayloadData;
-import com.vmware.herald.sensor.datatype.Proximity;
-import com.vmware.herald.sensor.datatype.ProximityMeasurementUnit;
-import com.vmware.herald.sensor.datatype.SensorType;
-import com.vmware.herald.sensor.datatype.TargetIdentifier;
 
-import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Date;
 import java.util.List;
-import java.util.Queue;
-import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.UUID;
 import java.util.concurrent.Executor;
+
+import io.bluetrace.opentrace.BuildConfig;
+import io.bluetrace.opentrace.MainActivity;
+import io.bluetrace.opentrace.idmanager.TemporaryID;
 
 import static android.content.pm.PackageManager.PERMISSION_GRANTED;
 
-/// Enables instrumentation of OpenTrace for evaluation with the Fair Efficacy Formula
-public class FairEfficacyInstrumentation {
-    // Parameters
-    /// Log level for HERALD logger
-    public static SensorLoggerLevel logLevel = SensorLoggerLevel.debug;
-    /// Set test mode to TRUE for evaluation, FALSE for normal operation
-    /// Evaluation mode will
-    /// - use a fixed payload to enable testing
-    /// - enable full offline operation without Firebase
-    /// - bypass registration
+public class HeraldIntegration extends DefaultSensorDelegate {
+    private final static SensorLogger logger = new ConcreteSensorLogger("Herald", "HeraldIntegration");
+    private final SensorArray sensorArray;
+
+    /// Enable test mode for evaluation with fair efficacy formula
     public static boolean testMode = true;
 
-    // Internals
-    private final static SensorLogger logger = new ConcreteSensorLogger("Sensor", "Data.FairEfficacyInstrumentation");
-    private final static int permissionRequestCode = 1294839287;
-    private final String deviceDescription = android.os.Build.MODEL + " (Android " + android.os.Build.VERSION.SDK_INT + ")";
-    private final Queue<SensorDelegate> delegates = new ConcurrentLinkedQueue<>();
-    public final PayloadData payloadData = generatePayloadData();
-
-
-    public FairEfficacyInstrumentation(final Context context) {
-        // Log contacts and battery usage
-        delegates.add(new ContactLog(context, "contacts.csv"));
-        delegates.add(new DetectionLog(context, "detection.csv", payloadData));
-        new BatteryLog(context, "battery.csv");
-
-        logger.info("DEVICE (payloadPrefix={},description={})", payloadData.shortName(), deviceDescription);
+    public HeraldIntegration(final Context context) {
+        if (HeraldIntegration.testMode) {
+            logger.info("test mode enabled");
+        }
+        // Enable interoperability with devices running legacy OpenTrace only protocol
+        BLESensorConfiguration.interopOpenTraceEnabled = true;
+        if (BLESensorConfiguration.interopOpenTraceEnabled) {
+            BLESensorConfiguration.interopOpenTraceServiceUUID = UUID.fromString(BuildConfig.BLE_SSID);
+            BLESensorConfiguration.interopOpenTracePayloadCharacteristicUUID = UUID.fromString(BuildConfig.V2_CHARACTERISTIC_ID);
+            logger.info("interop enabled (protocol=OpenTrace,serviceUUID={},characteristicUUID={})",
+                    BLESensorConfiguration.interopOpenTraceServiceUUID,
+                    BLESensorConfiguration.interopOpenTracePayloadCharacteristicUUID);
+        }
+        // Enable OpenTrace protocol running over Herald transport
+        sensorArray = new SensorArray(context, new BluetracePayloadDataSupplier(context));
+        sensorArray.add(this);
+        // Enable test mode instrumentation
+        if (HeraldIntegration.testMode) {
+            sensorArray.add(new HeraldTestInstrumentation(context));
+        }
     }
 
-    /// REQUIRED : Request application permissions for sensor operation.
-    public static void requestPermissions(final Activity activity) {
+    // MARK: - OpenTrace replacement functions for normal operation
+
+    public void bluetraceMonitoringService_actionStart() {
+        logger.debug("bluetraceMonitoringService_actionStart");
+        sensorArray.start();
+    }
+
+    public void bluetraceMonitoringService_actionStop() {
+        logger.debug("bluetraceMonitoringService_actionStop");
+        sensorArray.stop();
+    }
+
+    public void bluetraceMonitoringService_teardown() {
+        logger.debug("bluetraceMonitoringService_teardown");
+        sensorArray.stop();
+    }
+
+    // MARK: - OpenTrace replacement functions for test mode operation
+
+    private final static int permissionRequestCode = 1294839287;
+
+    public static TemporaryID tempIDManager_retrieveTemporaryID() {
+        return new TemporaryID(0, HeraldTestInstrumentation.payloadData.base64EncodedString(), Long.MAX_VALUE);
+    }
+
+    public static Task<HttpsCallableResult> tempIDManager_getTemporaryIDs() {
+        // Task will always be successful because retrieveTemporaryID is being performed locally
+        // using a fixed procedure, rather than relying on Firebase services.
+        return new TempIDManager_GetTemporaryIDsTask();
+    }
+
+    /// Request all application permissions for sensor array, rather than via on-boarding process.
+    public static void splashActivity_requestPermissions(final Activity activity) {
         // Check and request permissions
         final List<String> requiredPermissions = new ArrayList<>();
         requiredPermissions.add(Manifest.permission.BLUETOOTH);
@@ -87,8 +112,8 @@ public class FairEfficacyInstrumentation {
         }
     }
 
-    /// REQUIRED : Handle permission results.
-    public static void onRequestPermissionsResult(final int requestCode, @NonNull final String[] permissions, @NonNull final int[] grantResults) {
+    /// Handle permission request results, then start main activity
+    public static void splashActivity_onRequestPermissionsResult(final int requestCode, @NonNull final String[] permissions, @NonNull final int[] grantResults, final Activity activity) {
         if (requestCode == permissionRequestCode) {
             boolean permissionsGranted = true;
             for (int i = 0; i < permissions.length; i++) {
@@ -104,51 +129,17 @@ public class FairEfficacyInstrumentation {
             if (!permissionsGranted) {
                 logger.fault("Application does not have all required permissions to start (permissions=" + Arrays.asList(permissions) + ")");
             }
+
+            logger.info("Starting main activity, bypassing on-boarding");
+            activity.startActivity(new Intent(activity, MainActivity.class));
         }
     }
 
+    // MARK: - Mock task for GetTemporaryIDs
 
-    private final static PayloadData generatePayloadData() {
-        // Get device specific identifier
-        final String text = Build.MODEL + ":" + Build.BRAND;
-        final int identifier = text.hashCode();
-        // Convert identifier to data
-        final ByteBuffer identifierByteBuffer = ByteBuffer.allocate(4);
-        identifierByteBuffer.putInt(0, identifier);
-        final Data identifierData = new Data(identifierByteBuffer.array());
-        // Convert to payload
-        final ByteBuffer payloadByteBuffer = ByteBuffer.allocate(3 + identifierData.value.length);
-        payloadByteBuffer.position(3);
-        payloadByteBuffer.put(identifierData.value);
-        return new PayloadData(payloadByteBuffer.array());
-    }
-
-    // MARK:- Intrumentation functions
-
-    public void instrument(final Long timestampMillis, final String base64EncodedPayload, final Integer rssi) {
-        if (base64EncodedPayload == null) {
-            return;
-        }
-        if (rssi == null) {
-            return;
-        }
-        final TargetIdentifier targetIdentifier = new TargetIdentifier(base64EncodedPayload);
-        final PayloadData payloadData = new PayloadData(base64EncodedPayload);
-        final Proximity proximity = new Proximity(ProximityMeasurementUnit.RSSI, (double) rssi);
-        final Date timestamp = (timestampMillis == null ? new Date() : new Date(timestampMillis));
-        logger.debug("instrument (encounter,timestamp={},payload={},rssi={})", timestamp, payloadData.shortName(), rssi);
-        for (SensorDelegate delegate : delegates) {
-            delegate.sensor(SensorType.BLE, targetIdentifier);
-            delegate.sensor(SensorType.BLE, payloadData, targetIdentifier);
-            delegate.sensor(SensorType.BLE, proximity, targetIdentifier);
-            delegate.sensor(SensorType.BLE, proximity, targetIdentifier, payloadData);
-        }
-    }
-
-
-    // MARK:- Emulated task for bypassing Firebase
-
-    public final static class EmulatedTask extends Task<HttpsCallableResult> {
+    /// Task always succeeds as Firebase is being bypassed and temporary ID is
+    /// obtained locally and deterministically
+    private final static class TempIDManager_GetTemporaryIDsTask extends Task<HttpsCallableResult> {
         @Override
         public boolean isComplete() {
             return true;
