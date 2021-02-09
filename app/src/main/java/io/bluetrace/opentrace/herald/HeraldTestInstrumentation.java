@@ -103,7 +103,7 @@ public class HeraldTestInstrumentation extends DefaultSensorDelegate {
         }
         logger.debug("sensor={},didRead={},fromTarget={}", sensor.name(), payloadData.shortName(), fromTarget);
         for (final SensorDelegate delegate : delegates) {
-            delegate.sensor(sensor, didRead, fromTarget);
+            delegate.sensor(sensor, payloadData, fromTarget);
         }
     }
 
@@ -148,7 +148,7 @@ public class HeraldTestInstrumentation extends DefaultSensorDelegate {
         }
         logger.debug("sensor={},didMeasure={},fromTarget={},withPayload={}", sensor.name(), didMeasure.description(), fromTarget, payloadData.shortName());
         for (final SensorDelegate delegate : delegates) {
-            delegate.sensor(sensor, didMeasure, fromTarget, withPayload);
+            delegate.sensor(sensor, didMeasure, fromTarget, payloadData);
         }
     }
 }
