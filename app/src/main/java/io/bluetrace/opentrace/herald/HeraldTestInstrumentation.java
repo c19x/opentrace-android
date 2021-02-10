@@ -6,6 +6,7 @@ import android.os.Build;
 import com.vmware.herald.sensor.DefaultSensorDelegate;
 import com.vmware.herald.sensor.SensorDelegate;
 import com.vmware.herald.sensor.ble.BLESensorConfiguration;
+import com.vmware.herald.sensor.ble.ConcreteBLEDatabase;
 import com.vmware.herald.sensor.data.BatteryLog;
 import com.vmware.herald.sensor.data.ConcreteSensorLogger;
 import com.vmware.herald.sensor.data.ContactLog;
@@ -25,11 +26,8 @@ import com.vmware.herald.sensor.datatype.SensorType;
 import com.vmware.herald.sensor.datatype.TargetIdentifier;
 import com.vmware.herald.sensor.datatype.TimeInterval;
 
-import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
-
-import static com.vmware.herald.sensor.data.EventTimeIntervalLog.EventType.read;
 
 public class HeraldTestInstrumentation extends DefaultSensorDelegate {
     private final SensorLogger logger = new ConcreteSensorLogger("Herald", "HeraldTestInstrumentation");
@@ -117,9 +115,14 @@ public class HeraldTestInstrumentation extends DefaultSensorDelegate {
 
     @Override
     public void sensor(SensorType sensor, List<PayloadData> didShare, TargetIdentifier fromTarget) {
-        logger.debug("sensor={},didShare={},fromTarget={}", sensor.name(), didShare, fromTarget);
+        final List<PayloadData> didSharePayloadData = new ArrayList<>(didShare.size());
+        for (PayloadData didRead : didShare) {
+            final PayloadData payloadData = parsePayloadData(didRead);
+            didSharePayloadData.add(payloadData != null ? payloadData : didRead);
+        }
+        logger.debug("sensor={},didShare={},fromTarget={}", sensor.name(), didSharePayloadData, fromTarget);
         for (final SensorDelegate delegate : delegates) {
-            delegate.sensor(sensor, didShare, fromTarget);
+            delegate.sensor(sensor, didSharePayloadData, fromTarget);
         }
     }
 
